@@ -1,12 +1,14 @@
-
 package com.jarvisai.assistant
 
+import android.Manifest
 import android.app.Activity
-import android.os.Bundle
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
@@ -19,15 +21,17 @@ class MainActivity : Activity() {
     private lateinit var chat: LinearLayout
     private lateinit var input: EditText
     private lateinit var scroll: ScrollView
+    private lateinit var dialNumber: TextView
     private var tts: TextToSpeech? = null
+    private var pendingNumber = ""
 
     private val bg = Color.rgb(5, 9, 15)
     private val green = Color.rgb(0, 255, 150)
     private val white = Color.WHITE
+    private val CALL_PERMISSION = 200
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         window.statusBarColor = bg
         window.navigationBarColor = bg
 
@@ -36,7 +40,10 @@ class MainActivity : Activity() {
                 tts?.language = Locale("hi", "IN")
             }
         }
+        showHome()
+    }
 
+    private fun showHome() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(15), dp(18), dp(12))
@@ -54,7 +61,7 @@ class MainActivity : Activity() {
         root.addView(header)
 
         val status = TextView(this).apply {
-            text = "●  YOUR PERSONAL AI ASSISTANT"
+            text = "● YOUR PERSONAL AI ASSISTANT"
             textSize = 11f
             setTextColor(green)
             gravity = Gravity.CENTER
@@ -86,12 +93,9 @@ class MainActivity : Activity() {
             setPadding(dp(5), dp(5), dp(5), dp(10))
         }
         scroll.addView(chat)
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-            )
-        )
+        root.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -116,9 +120,9 @@ class MainActivity : Activity() {
         row.addView(send, LinearLayout.LayoutParams(dp(70), dp(52)))
         root.addView(row)
 
-        val call = makeButton("☎  OPEN PHONE DIALER")
+        val call = makeButton("☎  JARVIS DIAL PAD")
         val callParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
         )
         callParams.topMargin = dp(10)
         root.addView(call, callParams)
@@ -128,14 +132,153 @@ class MainActivity : Activity() {
             sendMessage()
             true
         }
-
         mic.setOnClickListener { startVoiceInput() }
-
-        call.setOnClickListener {
-            startActivity(Intent(Intent.ACTION_DIAL))
-        }
+        call.setOnClickListener { showDialPad() }
 
         setContentView(root)
+    }
+
+    private fun showDialPad() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(20), dp(18), dp(20), dp(15))
+            setBackgroundColor(bg)
+        }
+
+        val title = TextView(this).apply {
+            text = "JARVIS PHONE"
+            textSize = 25f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(green)
+            gravity = Gravity.CENTER
+        }
+        root.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "IN-APP DIAL PAD"
+            textSize = 11f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER
+        }
+        root.addView(subtitle)
+
+        dialNumber = TextView(this).apply {
+            text = ""
+            hint = "Enter phone number"
+            textSize = 27f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(dp(5), dp(25), dp(5), dp(25))
+            isSingleLine = true
+        }
+        root.addView(dialNumber, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(85)
+        ))
+
+        val keys = arrayOf(
+            arrayOf("1", "2", "3"),
+            arrayOf("4", "5", "6"),
+            arrayOf("7", "8", "9"),
+            arrayOf("*", "0", "#")
+        )
+
+        for (keyRow in keys) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            for (key in keyRow) {
+                val button = makeButton(key).apply {
+                    textSize = 24f
+                }
+                val params = LinearLayout.LayoutParams(0, dp(65), 1f)
+                params.setMargins(dp(5), dp(5), dp(5), dp(5))
+                row.addView(button, params)
+                button.setOnClickListener {
+                    dialNumber.append(key)
+                }
+            }
+            root.addView(row)
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        val delete = makeButton("⌫ DELETE")
+        val call = makeButton("☎ CALL")
+        val deleteParams = LinearLayout.LayoutParams(0, dp(55), 1f)
+        deleteParams.setMargins(dp(5), dp(10), dp(5), dp(10))
+        val callParams = LinearLayout.LayoutParams(0, dp(55), 1f)
+        callParams.setMargins(dp(5), dp(10), dp(5), dp(10))
+
+        actions.addView(delete, deleteParams)
+        actions.addView(call, callParams)
+        root.addView(actions)
+
+        delete.setOnClickListener {
+            val current = dialNumber.text.toString()
+            if (current.isNotEmpty()) {
+                dialNumber.text = current.dropLast(1)
+            }
+        }
+
+        call.setOnClickListener {
+            makePhoneCall(dialNumber.text.toString())
+        }
+
+        val back = makeButton("← BACK TO JARVIS")
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+        ))
+        back.setOnClickListener { showHome() }
+
+        setContentView(root)
+    }
+
+    private fun makePhoneCall(number: String) {
+        val cleanNumber = number.trim()
+        if (cleanNumber.isEmpty()) {
+            Toast.makeText(this, "Pehle number enter karein", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        pendingNumber = cleanNumber
+
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE)
+            != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.CALL_PHONE),
+                CALL_PERMISSION
+            )
+            return
+        }
+
+        try {
+            val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$cleanNumber"))
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Call nahi ho payi: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Deprecated("Deprecated Android callback")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CALL_PERMISSION) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                makePhoneCall(pendingNumber)
+            } else {
+                Toast.makeText(this, "Call permission nahi mili", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun sendMessage() {
@@ -160,7 +303,6 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = shape(Color.rgb(18, 27, 35), 14)
         }
-
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -179,7 +321,6 @@ class MainActivity : Activity() {
             )
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
             intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Jarvis se boliye")
-
             startActivityForResult(intent, 100)
         } catch (e: Exception) {
             Toast.makeText(this, "Voice input available nahi hai", Toast.LENGTH_SHORT).show()
@@ -193,11 +334,8 @@ class MainActivity : Activity() {
         data: Intent?
     ) {
         super.onActivityResult(requestCode, resultCode, data)
-
         if (requestCode == 100 && resultCode == RESULT_OK) {
-            val result = data?.getStringArrayListExtra(
-                RecognizerIntent.EXTRA_RESULTS
-            )
+            val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             input.setText(result?.firstOrNull() ?: "")
             sendMessage()
         }
