@@ -1,0 +1,235 @@
+package com.jarvisai.assistant
+
+import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.telecom.Call
+import android.telecom.CallAudioState
+import android.telecom.VideoProfile
+import android.view.Gravity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+
+class CallScreenActivity : Activity() {
+
+    private val green = Color.rgb(0, 255, 150)
+    private val bg = Color.rgb(5, 9, 15)
+    private val white = Color.WHITE
+
+    private lateinit var status: TextView
+    private lateinit var number: TextView
+    private lateinit var controls: LinearLayout
+    private lateinit var keypad: LinearLayout
+
+    private var muted = false
+    private var speaker = false
+    private var keypadVisible = false
+    private var currentCall: Call? = null
+
+    private val callCallback = object : Call.Callback() {
+        override fun onStateChanged(call: Call, state: Int) {
+            runOnUiThread { updateScreen() }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        if (android.os.Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(24, 35, 24, 25)
+            setBackgroundColor(bg)
+        }
+
+        val title = TextView(this).apply {
+            text = "JARVIS AI"
+            textSize = 27f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(green)
+            gravity = Gravity.CENTER
+        }
+        root.addView(title)
+
+        number = TextView(this).apply {
+            textSize = 25f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(0, 35, 0, 12)
+        }
+        root.addView(number)
+
+        status = TextView(this).apply {
+            textSize = 16f
+            setTextColor(green)
+            gravity = Gravity.CENTER
+        }
+        root.addView(status)
+
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(0, 35, 0, 10)
+        }
+        root.addView(controls)
+
+        keypad = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        root.addView(keypad)
+
+        setContentView(root)
+        updateScreen()
+    }
+
+    private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
+        val button = Button(this).apply {
+            text = label
+            textSize = 15f
+            isAllCaps = false
+            setTextColor(green)
+            setBackgroundColor(Color.rgb(20, 38, 39))
+            setOnClickListener { action() }
+        }
+        parent.addView(button, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 55
+        ).apply {
+            setMargins(0, 6, 0, 6)
+        })
+    }
+
+    private fun updateScreen() {
+        val call = JarvisCallManager.activeCall
+        currentCall = call
+
+        if (call == null) {
+            status.text = "Call ended"
+            number.text = ""
+            controls.removeAllViews()
+            keypad.removeAllViews()
+            return
+        }
+
+        val phoneNumber = call.details.handle?.schemeSpecificPart
+        number.text = phoneNumber ?: "Unknown number"
+
+        controls.removeAllViews()
+        keypad.removeAllViews()
+
+        when (call.state) {
+            Call.STATE_RINGING -> {
+                status.text = "INCOMING CALL"
+                addButton(controls, "✓ ANSWER") {
+                    call.answer(VideoProfile.STATE_AUDIO_ONLY)
+                }
+                addButton(controls, "✕ REJECT") {
+                    call.disconnect()
+                }
+            }
+
+            Call.STATE_DIALING, Call.STATE_CONNECTING -> {
+                status.text = "CALLING..."
+                addButton(controls, "✕ CANCEL CALL") {
+                    call.disconnect()
+                }
+            }
+
+            Call.STATE_ACTIVE, Call.STATE_HOLDING -> {
+                status.text = if (call.state == Call.STATE_HOLDING) "ON HOLD" else "CONNECTED"
+
+                addButton(controls, if (muted) "MIC ON" else "MUTE") {
+                    muted = !muted
+                    JarvisCallManager.service?.setMuted(muted)
+                    updateScreen()
+                }
+
+                addButton(controls, if (speaker) "EARPIECE" else "🔊 SPEAKER") {
+                    speaker = !speaker
+                    JarvisCallManager.service?.setAudioRoute(
+                        if (speaker) CallAudioState.ROUTE_SPEAKER
+                        else CallAudioState.ROUTE_EARPIECE
+                    )
+                    updateScreen()
+                }
+
+                addButton(controls, "⌨ KEYPAD") {
+                    keypadVisible = !keypadVisible
+                    updateScreen()
+                }
+
+                if (keypadVisible) showKeypad()
+
+                addButton(controls, "✕ END CALL") {
+                    call.disconnect()
+                }
+            }
+
+            Call.STATE_DISCONNECTED -> {
+                status.text = "CALL ENDED"
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (!isFinishing) finish()
+                }, 1200)
+            }
+
+            else -> {
+                status.text = "CONNECTING..."
+                addButton(controls, "✕ END CALL") {
+                    call.disconnect()
+                }
+            }
+        }
+    }
+
+    private fun showKeypad() {
+        val rows = arrayOf(
+            arrayOf("1", "2", "3"),
+            arrayOf("4", "5", "6"),
+            arrayOf("7", "8", "9"),
+            arrayOf("*", "0", "#")
+        )
+
+        for (rowValues in rows) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+
+            for (digit in rowValues) {
+                val button = Button(this).apply {
+                    text = digit
+                    setTextColor(green)
+                    textSize = 20f
+                    setOnClickListener {
+                        currentCall?.playDtmfTone(digit[0])
+                        currentCall?.stopDtmfTone()
+                    }
+                }
+                row.addView(button, LinearLayout.LayoutParams(
+                    0, 55, 1f
+                ))
+            }
+            keypad.addView(row)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        currentCall = JarvisCallManager.activeCall
+        currentCall?.registerCallback(callCallback)
+        updateScreen()
+    }
+
+    override fun onDestroy() {
+        currentCall?.unregisterCallback(callCallback)
+        super.onDestroy()
+    }
+}

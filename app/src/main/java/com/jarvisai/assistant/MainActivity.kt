@@ -2,6 +2,7 @@ package com.jarvisai.assistant
 
 import android.Manifest
 import android.app.Activity
+import android.app.role.RoleManager
 import android.content.Intent
 import android.provider.ContactsContract
 import android.content.pm.PackageManager
@@ -45,6 +46,45 @@ class MainActivity : Activity() {
             }
         }
         showHome()
+        handleDialIntent(intent)
+    }
+
+    private fun handleDialIntent(incoming: Intent?) {
+        if (incoming?.action == Intent.ACTION_DIAL) {
+            showDialPad()
+            val number = incoming.data?.schemeSpecificPart.orEmpty()
+            if (number.isNotEmpty()) dialNumber.text = number
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDialIntent(intent)
+    }
+
+    private fun requestDefaultDialer() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            Toast.makeText(this, "Android version support nahi karta", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val roleManager = getSystemService(RoleManager::class.java)
+
+        if (!roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+            Toast.makeText(this, "Default Dialer role available nahi hai", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        if (roleManager.isRoleHeld(RoleManager.ROLE_DIALER)) {
+            Toast.makeText(this, "Jarvis already Default Phone App hai", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        startActivityForResult(
+            roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER),
+            300
+        )
     }
 
     private fun showHome() {
@@ -138,6 +178,14 @@ class MainActivity : Activity() {
         }
         mic.setOnClickListener { startVoiceInput() }
         call.setOnClickListener { showDialPad() }
+
+        val defaultPhone = makeButton("⚙  SET DEFAULT PHONE APP")
+        val defaultParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+        )
+        defaultParams.topMargin = dp(8)
+        root.addView(defaultPhone, defaultParams)
+        defaultPhone.setOnClickListener { requestDefaultDialer() }
 
         setContentView(root)
     }
