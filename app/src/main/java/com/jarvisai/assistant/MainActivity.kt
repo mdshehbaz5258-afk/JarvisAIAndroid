@@ -3,6 +3,7 @@ package com.jarvisai.assistant
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.provider.ContactsContract
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -30,6 +31,9 @@ class MainActivity : Activity() {
     private val white = Color.WHITE
     private val CALL_PERMISSION = 200
 
+    private val CONTACTS_PERMISSION = 201
+    private data class PhoneContact(val name: String, val number: String, val photoUri: String?)
+    private var allContacts = mutableListOf<PhoneContact>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = bg
@@ -229,12 +233,211 @@ class MainActivity : Activity() {
             makePhoneCall(dialNumber.text.toString())
         }
 
+        val contactsButton = makeButton("👤 CONTACTS")
+        root.addView(contactsButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
+        ).apply {
+            setMargins(dp(5), dp(5), dp(5), dp(10))
+        })
+        contactsButton.setOnClickListener { showContacts() }
+
         val back = makeButton("← BACK TO JARVIS")
         root.addView(back, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
         ))
         back.setOnClickListener { showHome() }
 
+        setContentView(root)
+    }
+
+    private fun showContacts() {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.READ_CONTACTS),
+                CONTACTS_PERMISSION
+            )
+            return
+        }
+
+        allContacts.clear()
+        val unique = linkedMapOf<String, PhoneContact>()
+
+        try {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.PHOTO_URI
+            )
+
+            contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                null,
+                null,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC"
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                )
+                val numberIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                )
+                val photoIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.PHOTO_URI
+                )
+
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameIndex) ?: "Unknown"
+                    val number = cursor.getString(numberIndex) ?: continue
+                    val photo = if (photoIndex >= 0) cursor.getString(photoIndex) else null
+                    val key = number.filter { it.isDigit() }
+                    if (key.isNotEmpty() && !unique.containsKey(key)) {
+                        unique[key] = PhoneContact(name, number, photo)
+                    }
+                }
+            }
+
+            allContacts.addAll(unique.values)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Contacts load nahi hue: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(18), dp(16), dp(16))
+            setBackgroundColor(bg)
+        }
+
+        val title = TextView(this).apply {
+            text = "👤  JARVIS CONTACTS"
+            textSize = 23f
+            setTextColor(green)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(18))
+        }
+        root.addView(title)
+
+        val search = EditText(this).apply {
+            hint = "Search name or number..."
+            setHintTextColor(Color.GRAY)
+            setTextColor(white)
+            textSize = 16f
+            singleLine = true
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setBackgroundColor(Color.rgb(15, 28, 45))
+        }
+        root.addView(search, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
+        ))
+
+        val count = TextView(this).apply {
+            setTextColor(green)
+            textSize = 13f
+            setPadding(dp(4), dp(10), 0, dp(8))
+        }
+        root.addView(count)
+
+        val listScroll = ScrollView(this)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        listScroll.addView(list)
+        root.addView(listScroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        val back = makeButton("← BACK TO DIAL PAD")
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+        ))
+        back.setOnClickListener { showDialPad() }
+
+        fun renderContacts(filter: String) {
+            list.removeAllViews()
+            val results = allContacts.filter {
+                it.name.contains(filter, ignoreCase = true) ||
+                    it.number.contains(filter, ignoreCase = true)
+            }
+            count.text = "${results.size} CONTACTS"
+
+            if (results.isEmpty()) {
+                val empty = TextView(this).apply {
+                    text = if (allContacts.isEmpty()) {
+                        "No saved phone contacts found."
+                    } else {
+                        "No matching contacts found."
+                    }
+                    setTextColor(white)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(10), dp(35), dp(10), dp(35))
+                }
+                list.addView(empty)
+            }
+
+            for (contact in results) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(10), dp(9), dp(10), dp(9))
+                    setBackgroundColor(Color.rgb(7, 19, 39))
+                }
+
+                val photo = ImageView(this).apply {
+                    if (!contact.photoUri.isNullOrEmpty()) {
+                        try {
+                            setImageURI(Uri.parse(contact.photoUri))
+                        } catch (_: Exception) {
+                            setImageResource(android.R.drawable.sym_def_app_icon)
+                        }
+                    } else {
+                        setImageResource(android.R.drawable.sym_def_app_icon)
+                    }
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                }
+                row.addView(photo, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+                val details = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, 0, 0)
+                }
+                val name = TextView(this).apply {
+                    text = contact.name
+                    textSize = 16f
+                    setTextColor(white)
+                    typeface = Typeface.DEFAULT_BOLD
+                }
+                val number = TextView(this).apply {
+                    text = contact.number
+                    textSize = 14f
+                    setTextColor(Color.rgb(130, 183, 225))
+                }
+                details.addView(name)
+                details.addView(number)
+                row.addView(details, LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ))
+
+                row.setOnClickListener { makePhoneCall(contact.number) }
+
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                params.setMargins(0, dp(5), 0, dp(5))
+                list.addView(row, params)
+            }
+        }
+
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderContacts(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        renderContacts("")
         setContentView(root)
     }
 
@@ -271,6 +474,15 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CONTACTS_PERMISSION) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                showContacts()
+            } else {
+                Toast.makeText(this, "Contacts permission nahi mili", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == CALL_PERMISSION) {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED) {
