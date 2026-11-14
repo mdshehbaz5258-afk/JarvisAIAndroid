@@ -225,7 +225,10 @@ class CallScreenActivity : Activity() {
         }
     }
 
-    private fun dp(value: Int): Int =\n        (value * resources.displayMetrics.density).toInt()\n\n    override fun onResume() {
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    override fun onResume() {
         super.onResume()
         currentCall = JarvisCallManager.activeCall
         currentCall?.registerCallback(callCallback)
