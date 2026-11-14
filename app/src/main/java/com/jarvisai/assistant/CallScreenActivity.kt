@@ -47,7 +47,7 @@ class CallScreenActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(24, 35, 24, 25)
+            setPadding(dp(24), dp(35), dp(24), dp(25))
             setBackgroundColor(bg)
         }
 
@@ -64,7 +64,7 @@ class CallScreenActivity : Activity() {
             textSize = 25f
             setTextColor(white)
             gravity = Gravity.CENTER
-            setPadding(0, 35, 0, 12)
+            setPadding(0, dp(35), 0, dp(12))
         }
         root.addView(number)
 
@@ -78,7 +78,7 @@ class CallScreenActivity : Activity() {
         controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(0, 35, 0, 10)
+            setPadding(0, dp(35), 0, dp(10))
         }
         root.addView(controls)
 
@@ -95,16 +95,20 @@ class CallScreenActivity : Activity() {
     private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
         val button = Button(this).apply {
             text = label
-            textSize = 15f
+            textSize = 14f
             isAllCaps = false
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+            minHeight = dp(58)
+            includeFontPadding = false
             setTextColor(green)
             setBackgroundColor(Color.rgb(20, 38, 39))
             setOnClickListener { action() }
         }
         parent.addView(button, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 55
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(58)
         ).apply {
-            setMargins(0, 6, 0, 6)
+            setMargins(0, dp(6), 0, dp(6))
         })
     }
 
@@ -214,14 +218,14 @@ class CallScreenActivity : Activity() {
                     }
                 }
                 row.addView(button, LinearLayout.LayoutParams(
-                    0, 55, 1f
+                    0, dp(55), 1f
                 ))
             }
             keypad.addView(row)
         }
     }
 
-    override fun onResume() {
+    private fun dp(value: Int): Int =\n        (value * resources.displayMetrics.density).toInt()\n\n    override fun onResume() {
         super.onResume()
         currentCall = JarvisCallManager.activeCall
         currentCall?.registerCallback(callCallback)
