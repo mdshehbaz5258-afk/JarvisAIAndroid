@@ -309,47 +309,6 @@ class MainActivity : Activity() {
         }
 
         allContacts.clear()
-        val unique = linkedMapOf<String, PhoneContact>()
-
-        try {
-            val projection = arrayOf(
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER,
-                ContactsContract.CommonDataKinds.Phone.PHOTO_URI
-            )
-
-            contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                projection,
-                null,
-                null,
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC"
-            )?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-                )
-                val numberIndex = cursor.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
-                )
-                val photoIndex = cursor.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.PHOTO_URI
-                )
-
-                while (cursor.moveToNext()) {
-                    val name = cursor.getString(nameIndex) ?: "Unknown"
-                    val number = cursor.getString(numberIndex) ?: continue
-                    val photo = if (photoIndex >= 0) cursor.getString(photoIndex) else null
-                    val key = number.filter { it.isDigit() }
-                    if (key.isNotEmpty() && !unique.containsKey(key)) {
-                        unique[key] = PhoneContact(name, number, photo)
-                    }
-                }
-            }
-
-            allContacts.addAll(unique.values)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Contacts load nahi hue: ${e.message}", Toast.LENGTH_LONG).show()
-        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -485,8 +444,68 @@ class MainActivity : Activity() {
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
 
-        renderContacts("")
+        count.text = "Loading contacts..."
         setContentView(root)
+
+        Thread {
+            val unique = linkedMapOf<String, PhoneContact>()
+            var loadError: String? = null
+
+            try {
+                val projection = arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.PHOTO_URI
+                )
+
+                contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC"
+                )?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                    )
+                    val numberIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+                    val photoIndex = cursor.getColumnIndex(
+                        ContactsContract.CommonDataKinds.Phone.PHOTO_URI
+                    )
+
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(nameIndex) ?: "Unknown"
+                        val number = cursor.getString(numberIndex) ?: continue
+                        val photo = if (photoIndex >= 0) cursor.getString(photoIndex) else null
+                        val key = number.filter { it.isDigit() }
+
+                        if (key.isNotEmpty() && !unique.containsKey(key)) {
+                            unique[key] = PhoneContact(name, number, photo)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                loadError = e.message ?: "Unknown error"
+            }
+
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+
+                allContacts.clear()
+                allContacts.addAll(unique.values)
+                renderContacts(search.text.toString())
+
+                if (loadError != null) {
+                    Toast.makeText(
+                        this,
+                        "Contacts load nahi hue: $loadError",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     private fun makePhoneCall(number: String) {
