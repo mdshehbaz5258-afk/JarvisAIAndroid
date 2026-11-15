@@ -6,6 +6,10 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.VideoProfile
@@ -22,6 +26,7 @@ class CallScreenActivity : Activity() {
 
     private lateinit var status: TextView
     private lateinit var number: TextView
+    private lateinit var contactName: TextView
     private lateinit var controls: LinearLayout
     private lateinit var keypad: LinearLayout
 
@@ -60,6 +65,15 @@ class CallScreenActivity : Activity() {
         }
         root.addView(title)
 
+        contactName = TextView(this).apply {
+            textSize = 25f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(35), 0, dp(4))
+        }
+        root.addView(contactName)
+
         number = TextView(this).apply {
             textSize = 25f
             setTextColor(white)
@@ -92,6 +106,31 @@ class CallScreenActivity : Activity() {
         updateScreen()
     }
 
+    private fun findContactName(phoneNumber: String?): String? {
+        if (phoneNumber.isNullOrBlank()) return null
+
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return null
+
+        return try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
+            )
+
+            contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (e: SecurityException) {
+            null
+        }
+    }
+
     private fun addButton(parent: LinearLayout, label: String, action: () -> Unit) {
         val button = Button(this).apply {
             text = label
@@ -118,6 +157,7 @@ class CallScreenActivity : Activity() {
 
         if (call == null) {
             status.text = "Call ended"
+            contactName.text = ""
             number.text = ""
             controls.removeAllViews()
             keypad.removeAllViews()
@@ -125,7 +165,9 @@ class CallScreenActivity : Activity() {
         }
 
         val phoneNumber = call.details.handle?.schemeSpecificPart
-        number.text = phoneNumber ?: "Unknown number"
+        val savedName = findContactName(phoneNumber)
+        contactName.text = savedName ?: (phoneNumber ?: "Unknown number")
+        number.text = if (savedName != null) phoneNumber.orEmpty() else
 
         controls.removeAllViews()
         keypad.removeAllViews()
