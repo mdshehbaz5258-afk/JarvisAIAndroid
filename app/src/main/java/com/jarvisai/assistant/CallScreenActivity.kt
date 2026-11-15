@@ -167,7 +167,7 @@ class CallScreenActivity : Activity() {
         val phoneNumber = call.details.handle?.schemeSpecificPart
         val savedName = findContactName(phoneNumber)
         contactName.text = savedName ?: (phoneNumber ?: "Unknown number")
-        number.text = if (savedName != null) phoneNumber.orEmpty() else
+        number.text = if (savedName != null) phoneNumber.orEmpty() else ""
 
         controls.removeAllViews()
         keypad.removeAllViews()
