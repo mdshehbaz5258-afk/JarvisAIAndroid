@@ -198,22 +198,13 @@ class MainActivity : Activity() {
             setBackgroundColor(bg)
         }
 
-        val title = TextView(this).apply {
-            text = "JARVIS PHONE"
-            textSize = 25f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(green)
-            gravity = Gravity.CENTER
-        }
-        root.addView(title)
-
-        val subtitle = TextView(this).apply {
-            text = "IN-APP DIAL PAD"
-            textSize = 11f
-            setTextColor(Color.LTGRAY)
-            gravity = Gravity.CENTER
-        }
-        root.addView(subtitle)
+        root.addView(
+            TextView(this),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(95)
+            )
+        )
 
         dialNumber = TextView(this).apply {
             text = ""
