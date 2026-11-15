@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
 import android.provider.ContactsContract
+import android.provider.CallLog
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -33,7 +34,16 @@ class MainActivity : Activity() {
     private val CALL_PERMISSION = 200
 
     private val CONTACTS_PERMISSION = 201
+    private val CALL_LOG_PERMISSION = 202
+    private val RECENT_CONTACTS_PERMISSION = 203
     private data class PhoneContact(val name: String, val number: String, val photoUri: String?)
+    private data class RecentCall(
+        val number: String,
+        val name: String?,
+        val type: Int,
+        val date: Long,
+        val duration: Long
+    )
     private var allContacts = mutableListOf<PhoneContact>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +98,15 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.READ_CONTACTS),
+                RECENT_CONTACTS_PERMISSION
+            )
+            return
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(15), dp(18), dp(12))
@@ -179,6 +198,14 @@ class MainActivity : Activity() {
         mic.setOnClickListener { startVoiceInput() }
         call.setOnClickListener { showDialPad() }
 
+        val recent = makeButton("📞  RECENT CALLS")
+        val recentParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+        )
+        recentParams.topMargin = dp(8)
+        root.addView(recent, recentParams)
+        recent.setOnClickListener { showRecentCalls() }
+
         val defaultPhone = makeButton("⚙  SET DEFAULT PHONE APP")
         val defaultParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
@@ -188,6 +215,255 @@ class MainActivity : Activity() {
         defaultPhone.setOnClickListener { requestDefaultDialer() }
 
         setContentView(root)
+    }
+
+
+    private fun showRecentCalls() {
+        if (checkSelfPermission(Manifest.permission.READ_CALL_LOG)
+            != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.READ_CALL_LOG),
+                CALL_LOG_PERMISSION
+            )
+            return
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(12))
+            setBackgroundColor(bg)
+        }
+
+        val title = TextView(this).apply {
+            text = "RECENT CALLS"
+            textSize = 23f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(green)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(12))
+        }
+        root.addView(title)
+
+        val back = makeButton("← BACK TO JARVIS")
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(46)
+        ))
+        back.setOnClickListener { showHome() }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(10), 0, dp(10))
+        }
+        val scrollView = ScrollView(this)
+        scrollView.addView(content)
+        root.addView(scrollView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        val loading = TextView(this).apply {
+            text = "Loading call history..."
+            textSize = 15f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(25), 0, dp(25))
+        }
+        content.addView(loading)
+        setContentView(root)
+
+        Thread {
+            val calls = mutableListOf<RecentCall>()
+            val savedNumbers = mutableSetOf<String>()
+            var error: String? = null
+            try {
+                val projection = arrayOf(
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.DURATION
+                )
+                contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    CallLog.Calls.DATE + " DESC"
+                )?.use { cursor ->
+                    val ni = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
+                    val ci = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
+                    val ti = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
+                    val di = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
+                    val du = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+
+                    var count = 0
+                    while (cursor.moveToNext() && count < 300) {
+                        calls.add(
+                            RecentCall(
+                                cursor.getString(ni) ?: "Unknown number",
+                                cursor.getString(ci),
+                                cursor.getInt(ti),
+                                cursor.getLong(di),
+                                cursor.getLong(du)
+                            )
+                        )
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                error = e.message ?: "Call history access failed"
+            }
+
+            if (checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
+                PackageManager.PERMISSION_GRANTED) {
+                try {
+                    val projection = arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+                    contentResolver.query(
+                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        projection,
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        val index = cursor.getColumnIndexOrThrow(
+                            ContactsContract.CommonDataKinds.Phone.NUMBER
+                        )
+                        while (cursor.moveToNext()) {
+                            val key = (cursor.getString(index) ?: "")
+                                .filter { it.isDigit() }.takeLast(10)
+                            if (key.isNotEmpty()) savedNumbers.add(key)
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                content.removeAllViews()
+
+                if (error != null) {
+                    addCallHeading(content, "Call history access nahi hui")
+                    addCallText(content, error!!)
+                    return@runOnUiThread
+                }
+
+
+                val unknown = calls.filter { call ->
+                    val key = call.number.filter { it.isDigit() }.takeLast(10)
+                    call.name.isNullOrBlank() && key.isNotEmpty() &&
+                        !savedNumbers.contains(key)
+                }
+
+                addCallHeading(content, "ALL CALLS (${calls.size})")
+                if (calls.isEmpty()) addCallText(content, "Abhi koi call history nahi hai.")
+                calls.forEach { addRecentCallRow(content, it, false) }
+
+                addCallHeading(content, "UNKNOWN NUMBERS (${unknown.size})")
+                if (unknown.isEmpty()) addCallText(content, "Unknown numbers nahi mile.")
+                unknown.forEach { addRecentCallRow(content, it, true) }
+            }
+        }.start()
+    }
+
+    private fun addCallHeading(parent: LinearLayout, label: String) {
+        val heading = TextView(this).apply {
+            text = label
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(green)
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        parent.addView(heading)
+    }
+
+    private fun addCallText(parent: LinearLayout, label: String) {
+        val view = TextView(this).apply {
+            text = label
+            textSize = 14f
+            setTextColor(white)
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        parent.addView(view)
+    }
+
+    private fun addRecentCallRow(
+        parent: LinearLayout,
+        call: RecentCall,
+        isUnknown: Boolean
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = shape(Color.rgb(15, 28, 35), 12)
+        }
+
+        val kind = when (call.type) {
+            CallLog.Calls.INCOMING_TYPE -> "Incoming"
+            CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
+            CallLog.Calls.MISSED_TYPE -> "Missed"
+            CallLog.Calls.REJECTED_TYPE -> "Rejected"
+            CallLog.Calls.BLOCKED_TYPE -> "Blocked"
+            else -> "Other"
+        }
+
+        val displayName = if (isUnknown) "Unknown Number" else
+            call.name?.takeIf { it.isNotBlank() } ?: call.number
+
+        val name = TextView(this).apply {
+            text = displayName
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(white)
+        }
+        card.addView(name)
+
+        val detail = TextView(this).apply {
+            val dateText = java.text.SimpleDateFormat(
+                "dd MMM yyyy, hh:mm a", Locale.getDefault()
+            ).format(java.util.Date(call.date))
+            val mins = call.duration / 60
+            val secs = call.duration % 60
+            text = "$kind  •  ${call.number}\n$dateText  •  ${mins}m ${secs}s"
+            textSize = 12f
+            setTextColor(Color.rgb(150, 190, 205))
+            setPadding(0, dp(5), 0, dp(7))
+        }
+        card.addView(detail)
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val callButton = makeButton("CALL")
+        actions.addView(callButton, LinearLayout.LayoutParams(0, dp(42), 1f))
+        callButton.setOnClickListener { makePhoneCall(call.number) }
+
+        if (isUnknown) {
+            val saveButton = makeButton("SAVE CONTACT")
+            val params = LinearLayout.LayoutParams(0, dp(42), 1f)
+            params.leftMargin = dp(8)
+            actions.addView(saveButton, params)
+            saveButton.setOnClickListener {
+                try {
+                    val intent = Intent(Intent.ACTION_INSERT).apply {
+                        type = ContactsContract.Contacts.CONTENT_TYPE
+                        putExtra(ContactsContract.Intents.Insert.PHONE, call.number)
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Contact save nahi ho paya", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        card.addView(actions)
+        val params = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        params.setMargins(0, dp(4), 0, dp(4))
+        parent.addView(card, params)
     }
 
     private fun showDialPad() {
@@ -532,6 +808,24 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CALL_LOG_PERMISSION) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                showRecentCalls()
+            } else {
+                Toast.makeText(this, "Call history permission nahi mili", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == RECENT_CONTACTS_PERMISSION) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                showRecentCalls()
+            } else {
+                Toast.makeText(this, "Saved contacts pehchanne ki permission nahi mili", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode == CONTACTS_PERMISSION) {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED) {
