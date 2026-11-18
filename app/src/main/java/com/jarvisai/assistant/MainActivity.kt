@@ -244,11 +244,6 @@ class MainActivity : Activity() {
         }
         root.addView(title)
 
-        val back = makeButton("← BACK TO JARVIS")
-        root.addView(back, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(46)
-        ))
-        back.setOnClickListener { showHome() }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -259,6 +254,12 @@ class MainActivity : Activity() {
         root.addView(scrollView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
+
+        val back = makeButton("← BACK TO JARVIS")
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(46)
+        ))
+        back.setOnClickListener { showHome() }
 
         val loading = TextView(this).apply {
             text = "Loading call history..."
@@ -398,6 +399,178 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private fun showCallDetails(phoneNumber: String) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(14))
+            setBackgroundColor(bg)
+        }
+
+        val title = TextView(this).apply {
+            text = "CALL DETAILS"
+            textSize = 23f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(green)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(12))
+        }
+        root.addView(title)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+
+        val scroll = ScrollView(this)
+        scroll.addView(content)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        val back = makeButton("← BACK TO RECENT CALLS")
+        root.addView(back, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(46)
+        ))
+        back.setOnClickListener { showRecentCalls() }
+
+        addCallText(content, "Number: $phoneNumber")
+        addCallText(content, "Call history loading...")
+
+        setContentView(root)
+
+        Thread {
+            val history = mutableListOf<RecentCall>()
+            var error: String? = null
+            var contactName: String? = null
+
+            try {
+                val projection = arrayOf(
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.DURATION
+                )
+
+                val targetDigits = phoneNumber.filter { it.isDigit() }.takeLast(10)
+
+                contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    CallLog.Calls.DATE + " DESC"
+                )?.use { cursor ->
+                    val ni = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
+                    val ci = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
+                    val ti = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
+                    val di = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
+                    val du = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+
+                    while (cursor.moveToNext()) {
+                        val number = cursor.getString(ni) ?: ""
+                        val digits = number.filter { it.isDigit() }.takeLast(10)
+
+                        val matches = if (targetDigits.length >= 7) {
+                            digits == targetDigits
+                        } else {
+                            number == phoneNumber
+                        }
+
+                        if (matches) {
+                            val name = cursor.getString(ci)
+                            if (contactName.isNullOrBlank() && !name.isNullOrBlank()) {
+                                contactName = name
+                            }
+
+                            history.add(
+                                RecentCall(
+                                    number,
+                                    name,
+                                    cursor.getInt(ti),
+                                    cursor.getLong(di),
+                                    cursor.getLong(du)
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                error = e.message ?: "Call history access failed"
+            }
+
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+
+                content.removeAllViews()
+
+                if (error != null) {
+                    addCallHeading(content, "Call history access nahi hui")
+                    addCallText(content, error!!)
+                    return@runOnUiThread
+                }
+
+                addCallHeading(
+                    content,
+                    contactName?.takeIf { it.isNotBlank() } ?: phoneNumber
+                )
+
+                val incoming = history.count {
+                    it.type == CallLog.Calls.INCOMING_TYPE
+                }
+                val outgoing = history.count {
+                    it.type == CallLog.Calls.OUTGOING_TYPE
+                }
+                val missed = history.count {
+                    it.type == CallLog.Calls.MISSED_TYPE
+                }
+                val rejected = history.count {
+                    it.type == CallLog.Calls.REJECTED_TYPE
+                }
+                val blocked = history.count {
+                    it.type == CallLog.Calls.BLOCKED_TYPE
+                }
+
+                addCallHeading(content, "CALL SUMMARY")
+                addCallText(content, "Total Calls: ${history.size}")
+                addCallText(content, "Incoming: $incoming")
+                addCallText(content, "Outgoing: $outgoing")
+                addCallText(content, "Missed: $missed")
+                addCallText(content, "Rejected: $rejected")
+                addCallText(content, "Blocked: $blocked")
+
+                addCallHeading(content, "CALL HISTORY")
+
+                if (history.isEmpty()) {
+                    addCallText(content, "Is number ki call history nahi mili.")
+                } else {
+                    history.forEachIndexed { index, call ->
+                        val kind = when (call.type) {
+                            CallLog.Calls.INCOMING_TYPE -> "Incoming"
+                            CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
+                            CallLog.Calls.MISSED_TYPE -> "Missed"
+                            CallLog.Calls.REJECTED_TYPE -> "Rejected"
+                            CallLog.Calls.BLOCKED_TYPE -> "Blocked"
+                            else -> "Other"
+                        }
+
+                        val dateText = java.text.SimpleDateFormat(
+                            "dd MMM yyyy, hh:mm a",
+                            Locale.getDefault()
+                        ).format(java.util.Date(call.date))
+
+                        val mins = call.duration / 60
+                        val secs = call.duration % 60
+
+                        addCallHeading(content, "CALL ${index + 1} • $kind")
+                        addCallText(content, dateText)
+                        addCallText(content, "Duration: ${mins}m ${secs}s")
+                    }
+                }
+            }
+        }.start()
+    }
+
     private fun addCallHeading(parent: LinearLayout, label: String) {
         val heading = TextView(this).apply {
             text = label
@@ -429,6 +602,10 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = shape(Color.rgb(15, 28, 35), 12)
         }
+
+        card.isClickable = true
+        card.isFocusable = true
+        card.setOnClickListener { showCallDetails(call.number) }
 
         val kind = when (call.type) {
             CallLog.Calls.INCOMING_TYPE -> "Incoming"
