@@ -1,6 +1,7 @@
 package com.jarvisai.assistant
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -55,15 +56,6 @@ class CallScreenActivity : Activity() {
             setPadding(dp(24), dp(35), dp(24), dp(25))
             setBackgroundColor(bg)
         }
-
-        val title = TextView(this).apply {
-            text = "JARVIS AI"
-            textSize = 27f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(green)
-            gravity = Gravity.CENTER
-        }
-        root.addView(title)
 
         contactName = TextView(this).apply {
             textSize = 25f
@@ -151,6 +143,24 @@ class CallScreenActivity : Activity() {
         })
     }
 
+    private fun addGridButton(parent: LinearLayout, label: String, action: () -> Unit) {
+        val button = Button(this).apply {
+            text = label
+            textSize = 13f
+            isAllCaps = false
+            minWidth = 0
+            minHeight = dp(78)
+            setTextColor(white)
+            setBackgroundColor(Color.rgb(25, 29, 38))
+            setOnClickListener { action() }
+        }
+        parent.addView(button, LinearLayout.LayoutParams(
+            0, dp(82), 1f
+        ).apply {
+            setMargins(dp(4), dp(4), dp(4), dp(4))
+        })
+    }
+
     private fun updateScreen() {
         val call = JarvisCallManager.activeCall
         currentCall = call
@@ -185,6 +195,51 @@ class CallScreenActivity : Activity() {
 
             Call.STATE_DIALING, Call.STATE_CONNECTING -> {
                 status.text = "CALLING..."
+
+                val row1 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                }
+                addGridButton(row1, "🎙\nMUTE") {
+                    muted = !muted
+                    JarvisCallManager.service?.setMuted(muted)
+                    updateScreen()
+                }
+                addGridButton(row1, "⌨\nKEYPAD") {
+                    keypadVisible = !keypadVisible
+                    updateScreen()
+                }
+                addGridButton(row1, "🔊\nSPEAKER") {
+                    speaker = !speaker
+                    JarvisCallManager.service?.setAudioRoute(
+                        if (speaker) CallAudioState.ROUTE_SPEAKER
+                        else CallAudioState.ROUTE_EARPIECE
+                    )
+                    updateScreen()
+                }
+                controls.addView(row1)
+
+                val row2 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                }
+                addGridButton(row2, "➕\nADD CALL") {
+                    startActivity(Intent(Intent.ACTION_DIAL))
+                }
+                addGridButton(row2, "👤\nCONTACTS") {
+                    startActivity(Intent(Intent.ACTION_VIEW, ContactsContract.Contacts.CONTENT_URI))
+                }
+                controls.addView(row2)
+
+                if (keypadVisible) showKeypad()
+
+                addButton(controls, "✉  SEND MESSAGE") {
+                    if (!phoneNumber.isNullOrBlank()) {
+                        startActivity(Intent(
+                            Intent.ACTION_SENDTO,
+                            Uri.parse("smsto:${Uri.encode(phoneNumber)}")
+                        ))
+                    }
+                }
+
                 addButton(controls, "✕ CANCEL CALL") {
                     call.disconnect()
                 }
@@ -193,13 +248,19 @@ class CallScreenActivity : Activity() {
             Call.STATE_ACTIVE, Call.STATE_HOLDING -> {
                 status.text = if (call.state == Call.STATE_HOLDING) "ON HOLD" else "CONNECTED"
 
-                addButton(controls, if (muted) "MIC ON" else "MUTE") {
+                val row1 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                }
+                addGridButton(row1, if (muted) "🎙\nMIC ON" else "🎙\nMUTE") {
                     muted = !muted
                     JarvisCallManager.service?.setMuted(muted)
                     updateScreen()
                 }
-
-                addButton(controls, if (speaker) "EARPIECE" else "🔊 SPEAKER") {
+                addGridButton(row1, "⌨\nKEYPAD") {
+                    keypadVisible = !keypadVisible
+                    updateScreen()
+                }
+                addGridButton(row1, if (speaker) "🔈\nEARPIECE" else "🔊\nSPEAKER") {
                     speaker = !speaker
                     JarvisCallManager.service?.setAudioRoute(
                         if (speaker) CallAudioState.ROUTE_SPEAKER
@@ -207,13 +268,30 @@ class CallScreenActivity : Activity() {
                     )
                     updateScreen()
                 }
+                controls.addView(row1)
 
-                addButton(controls, "⌨ KEYPAD") {
-                    keypadVisible = !keypadVisible
-                    updateScreen()
+                val row2 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
                 }
+                addGridButton(row2, "➕\nADD CALL") {
+                    startActivity(Intent(Intent.ACTION_DIAL))
+                }
+                addGridButton(row2, "👤\nCONTACTS") {
+                    startActivity(Intent(Intent.ACTION_VIEW, ContactsContract.Contacts.CONTENT_URI))
+                }
+                controls.addView(row2)
 
                 if (keypadVisible) showKeypad()
+
+                addButton(controls, "✉  SEND MESSAGE") {
+                    if (!phoneNumber.isNullOrBlank()) {
+                        val smsIntent = Intent(
+                            Intent.ACTION_SENDTO,
+                            Uri.parse("smsto:${Uri.encode(phoneNumber)}")
+                        )
+                        startActivity(smsIntent)
+                    }
+                }
 
                 addButton(controls, "✕ END CALL") {
                     call.disconnect()
