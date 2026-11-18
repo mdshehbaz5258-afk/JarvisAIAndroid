@@ -1059,12 +1059,62 @@ class MainActivity : Activity() {
 
         addMessage("YOU: $message", green)
         input.setText("")
+        addMessage("JARVIS: Soch raha hoon...", white)
 
-        val reply = "Main Jarvis hoon. Aapka message mila hai. " +
-                "Asli AI service connect hone ke baad main aapke sawalon ka jawab de sakunga."
+        Thread {
+            var connection: java.net.HttpURLConnection? = null
 
-        addMessage("JARVIS: $reply", white)
-        tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "jarvis_reply")
+            val reply = try {
+                val url = java.net.URL(
+                    "https://jarvis-ai-server.mdshehbaz5258.workers.dev/"
+                )
+
+                connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 60000
+                connection.doOutput = true
+                connection.setRequestProperty(
+                    "Content-Type", "application/json; charset=UTF-8"
+                )
+
+                val body = org.json.JSONObject()
+                    .put("message", message)
+                    .toString()
+
+                connection.outputStream.use {
+                    it.write(body.toByteArray(Charsets.UTF_8))
+                }
+
+                val status = connection.responseCode
+                val stream = if (status in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+
+                val result = stream?.bufferedReader()?.use {
+                    it.readText()
+                } ?: ""
+
+                val json = org.json.JSONObject(result)
+
+                if (status in 200..299) {
+                    json.optString("reply", "Jarvis ko jawab nahi mila.")
+                } else {
+                    "AI Error: " + json.optString("error", "Server error")
+                }
+            } catch (e: Exception) {
+                "Connection error: " + (e.message ?: "Internet check karo")
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                addMessage("JARVIS: $reply", white)
+                tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "jarvis_reply")
+            }
+        }.start()
     }
 
     private fun addMessage(message: String, color: Int) {
