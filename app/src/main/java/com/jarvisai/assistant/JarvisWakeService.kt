@@ -92,7 +92,7 @@ class JarvisWakeService : Service() {
             recognizer = activeRecognizer
             speechService = SpeechService(activeRecognizer, 16000.0f)
 
-            speechService?.startListening(object : RecognitionListener {
+            val listeningStarted = speechService?.startListening(object : RecognitionListener {
 
                 override fun onPartialResult(hypothesis: String?) {
                     checkWakePhrase(hypothesis)
@@ -116,9 +116,15 @@ class JarvisWakeService : Service() {
                 override fun onTimeout() {
                     if (!stopping) updateNotification("Jarvis listening...")
                 }
-            })
+            }) ?: false
 
-            updateNotification("Jarvis listening for Hey Jarvis")
+            if (listeningStarted) {
+                updateNotification("Microphone recognition started")
+            } else {
+                updateNotification("Microphone recognition FAILED to start")
+                stopping = true
+                stopSelf()
+            }
 
         } catch (e: Exception) {
             updateNotification("Recognition error: ${e.message}")
