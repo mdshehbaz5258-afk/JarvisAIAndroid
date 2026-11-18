@@ -856,7 +856,6 @@ class MainActivity : Activity() {
             if (clip != null && clip.itemCount > 0) {
                 val pasted = clip.getItemAt(0).coerceToText(this).toString()
                 dialNumber.setText(pasted.filter { it.isDigit() || it == '+' || it == '*' || it == '#' })
-                dialNumber.setSelection(dialNumber.text.length)
             } else {
                 Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
             }
