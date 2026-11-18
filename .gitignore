@@ -1,0 +1,14 @@
+# Android build output
+.gradle/
+build/
+app/build/
+local.properties
+
+# Temporary backups
+*.backup
+*.bak
+*~
+
+# Downloaded Vosk model and source archive
+models/
+vosk-android-sources.jar

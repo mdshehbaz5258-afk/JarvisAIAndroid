@@ -32,6 +32,8 @@ class MainActivity : Activity() {
     private val green = Color.rgb(0, 255, 150)
     private val white = Color.WHITE
     private val CALL_PERMISSION = 200
+    private val WAKE_PERMISSION = 204
+    private val NOTIFICATION_PERMISSION = 205
 
     private val CONTACTS_PERMISSION = 201
     private val CALL_LOG_PERMISSION = 202
@@ -214,9 +216,72 @@ class MainActivity : Activity() {
         root.addView(defaultPhone, defaultParams)
         defaultPhone.setOnClickListener { requestDefaultDialer() }
 
+
+        val startWake = makeButton("🎙  START HEY JARVIS")
+        val startWakeParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
+        )
+        startWakeParams.topMargin = dp(10)
+        root.addView(startWake, startWakeParams)
+
+        val stopWake = makeButton("⏹  STOP LISTENING")
+        val stopWakeParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(48)
+        )
+        stopWakeParams.topMargin = dp(7)
+        root.addView(stopWake, stopWakeParams)
+
+        startWake.setOnClickListener {
+            requestWakeFlow()
+        }
+
+        stopWake.setOnClickListener {
+            stopService(Intent(this, JarvisWakeService::class.java))
+            Toast.makeText(this, "Jarvis listening stopped", Toast.LENGTH_SHORT).show()
+        }
+
         setContentView(root)
     }
 
+
+
+
+    private fun requestWakeFlow() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION
+            )
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                WAKE_PERMISSION
+            )
+            return
+        }
+
+        startWakeService()
+    }
+
+    private fun startWakeService() {
+        try {
+            val serviceIntent = Intent(this, JarvisWakeService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Toast.makeText(this, "Jarvis listening service starting", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Service start nahi hui: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun showRecentCalls() {
         if (checkSelfPermission(Manifest.permission.READ_CALL_LOG)
@@ -756,6 +821,47 @@ class MainActivity : Activity() {
             makePhoneCall(dialNumber.text.toString())
         }
 
+        val clipboardActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        val copyButton = makeButton("📋 COPY NUMBER")
+        val pasteButton = makeButton("📥 PASTE NUMBER")
+
+        val copyParams = LinearLayout.LayoutParams(0, dp(50), 1f)
+        copyParams.setMargins(dp(5), dp(5), dp(5), dp(5))
+
+        val pasteParams = LinearLayout.LayoutParams(0, dp(50), 1f)
+        pasteParams.setMargins(dp(5), dp(5), dp(5), dp(5))
+
+        clipboardActions.addView(copyButton, copyParams)
+        clipboardActions.addView(pasteButton, pasteParams)
+        root.addView(clipboardActions)
+
+        copyButton.setOnClickListener {
+            val number = dialNumber.text.toString()
+            if (number.isNotBlank()) {
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Phone Number", number))
+                Toast.makeText(this, "Number copied", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "No number to copy", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        pasteButton.setOnClickListener {
+            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val pasted = clip.getItemAt(0).coerceToText(this).toString()
+                dialNumber.setText(pasted.filter { it.isDigit() || it == '+' || it == '*' || it == '#' })
+                dialNumber.setSelection(dialNumber.text.length)
+            } else {
+                Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         val contactsButton = makeButton("👤 CONTACTS")
         root.addView(contactsButton, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(50)
@@ -1048,6 +1154,31 @@ class MainActivity : Activity() {
             }
             return
         }
+
+
+        if (requestCode == NOTIFICATION_PERMISSION) {
+            if (android.os.Build.VERSION.SDK_INT < 33 ||
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED) {
+                requestWakeFlow()
+            } else {
+                Toast.makeText(this, "Listening ke liye notification permission zaroori hai", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+
+        if (requestCode == WAKE_PERMISSION) {
+            val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+
+            if (micGranted) {
+                startWakeService()
+            } else {
+                Toast.makeText(this, "Microphone permission zaroori hai", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+
         if (requestCode == CALL_PERMISSION) {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED) {

@@ -10,6 +10,23 @@ object JarvisCallManager {
 
     @Volatile
     var service: JarvisInCallService? = null
+
+    fun answerIncomingCall(): Boolean {
+        val call = activeCall ?: return false
+        if (call.state != Call.STATE_RINGING) return false
+        call.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)
+        return true
+    }
+
+    fun rejectOrEndCall(): Boolean {
+        val call = activeCall ?: return false
+        if (call.state == Call.STATE_RINGING) {
+            call.reject(false, null)
+        } else {
+            call.disconnect()
+        }
+        return true
+    }
 }
 
 class JarvisInCallService : InCallService() {
