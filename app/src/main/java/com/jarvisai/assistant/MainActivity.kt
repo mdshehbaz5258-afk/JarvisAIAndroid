@@ -990,6 +990,11 @@ class MainActivity : Activity() {
             return
         }
 
+        if (!cleanNumber.matches(Regex("\\+?[0-9*#(),; -]+"))) {
+            Toast.makeText(this, "Invalid phone number", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         pendingNumber = cleanNumber
 
         if (checkSelfPermission(Manifest.permission.CALL_PHONE)
