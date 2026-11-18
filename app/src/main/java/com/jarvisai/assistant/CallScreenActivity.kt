@@ -1,18 +1,20 @@
 package com.jarvisai.assistant
 
+import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.Manifest
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.TelecomManager
 import android.telecom.VideoProfile
 import android.view.Gravity
 import android.widget.Button
@@ -161,6 +163,44 @@ class CallScreenActivity : Activity() {
         })
     }
 
+
+
+    private fun getCallAccountLabel(call: Call): String {
+        return try {
+            val handle = call.details.accountHandle
+                ?: return "SIM information unavailable"
+            val telecom = getSystemService(TELECOM_SERVICE) as TelecomManager
+            val label = telecom.getPhoneAccount(handle)?.label?.toString()
+            label?.takeIf { it.isNotBlank() } ?: "SIM information unavailable"
+        } catch (e: Exception) {
+            "SIM information unavailable"
+        }
+    }
+
+    private fun showQuickReplies(phoneNumber: String?) {
+        if (phoneNumber.isNullOrBlank()) return
+
+        val replies = arrayOf(
+            "I will call you back shortly.",
+            "I am busy right now. Please text me.",
+            "What is up?",
+            "Sorry, I missed your call.",
+            "I cannot talk right now. Talk to you soon."
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Send a quick reply")
+            .setItems(replies) { _, which ->
+                val smsIntent = Intent(
+                    Intent.ACTION_SENDTO,
+                    Uri.parse("smsto:${Uri.encode(phoneNumber)}")
+                ).putExtra("sms_body", replies[which])
+                startActivity(smsIntent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun updateScreen() {
         val call = JarvisCallManager.activeCall
         currentCall = call
@@ -184,12 +224,15 @@ class CallScreenActivity : Activity() {
 
         when (call.state) {
             Call.STATE_RINGING -> {
-                status.text = "INCOMING CALL"
+                status.text = "INCOMING CALL • ${getCallAccountLabel(call)}"
                 addButton(controls, "✓ ANSWER") {
                     call.answer(VideoProfile.STATE_AUDIO_ONLY)
                 }
                 addButton(controls, "✕ REJECT") {
                     call.disconnect()
+                }
+                addButton(controls, "✉ SEND MESSAGE") {
+                    showQuickReplies(phoneNumber)
                 }
             }
 
