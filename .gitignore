@@ -12,3 +12,9 @@ local.properties
 # Downloaded Vosk model and source archive
 models/
 vosk-android-sources.jar
+
+# Release signing secrets
+*.jks
+*.keystore
+*.p12
+key.properties

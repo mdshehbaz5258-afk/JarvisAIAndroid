@@ -16,6 +16,10 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      JARVIS_KEYSTORE_FILE: ${{ github.workspace }}/release-key.jks
+      JARVIS_KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
+      JARVIS_KEY_ALIAS: ${{ secrets.JARVIS_KEY_ALIAS }}
+      JARVIS_KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
 
     steps:
       - name: Checkout project
@@ -27,9 +31,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.JARVIS_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$JARVIS_KEYSTORE_FILE"
+          chmod 600 "$JARVIS_KEYSTORE_FILE"
+          test -s "$JARVIS_KEYSTORE_FILE"
+
       - name: Configure Android SDK
         run: |
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
           if [ -z "$SDKMANAGER" ]; then
             echo "sdkmanager not found"
@@ -38,14 +51,18 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build Jarvis AI APK
+      - name: Build signed Release APK
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean assembleDebug
+          ./gradlew --no-daemon clean assembleRelease
 
-      - name: Upload APK
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$JARVIS_KEYSTORE_FILE"
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-AI-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: JARVIS-AI-SIGNED-RELEASE
+          path: app/build/outputs/apk/release/app-release.apk
           retention-days: 7
