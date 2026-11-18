@@ -272,8 +272,8 @@ class MainActivity : Activity() {
 
         Thread {
             val calls = mutableListOf<RecentCall>()
-            val savedNumbers = mutableSetOf<String>()
             var error: String? = null
+
             try {
                 val projection = arrayOf(
                     CallLog.Calls.NUMBER,
@@ -282,6 +282,7 @@ class MainActivity : Activity() {
                     CallLog.Calls.DATE,
                     CallLog.Calls.DURATION
                 )
+
                 contentResolver.query(
                     CallLog.Calls.CONTENT_URI,
                     projection,
@@ -296,7 +297,7 @@ class MainActivity : Activity() {
                     val du = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
 
                     var count = 0
-                    while (cursor.moveToNext() && count < 300) {
+                    while (cursor.moveToNext() && count < 100) {
                         calls.add(
                             RecentCall(
                                 cursor.getString(ni) ?: "Unknown number",
@@ -313,32 +314,6 @@ class MainActivity : Activity() {
                 error = e.message ?: "Call history access failed"
             }
 
-            if (checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
-                PackageManager.PERMISSION_GRANTED) {
-                try {
-                    val projection = arrayOf(
-                        ContactsContract.CommonDataKinds.Phone.NUMBER
-                    )
-                    contentResolver.query(
-                        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        projection,
-                        null,
-                        null,
-                        null
-                    )?.use { cursor ->
-                        val index = cursor.getColumnIndexOrThrow(
-                            ContactsContract.CommonDataKinds.Phone.NUMBER
-                        )
-                        while (cursor.moveToNext()) {
-                            val key = (cursor.getString(index) ?: "")
-                                .filter { it.isDigit() }.takeLast(10)
-                            if (key.isNotEmpty()) savedNumbers.add(key)
-                        }
-                    }
-                } catch (_: Exception) {
-                }
-            }
-
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 content.removeAllViews()
@@ -349,20 +324,76 @@ class MainActivity : Activity() {
                     return@runOnUiThread
                 }
 
-
-                val unknown = calls.filter { call ->
-                    val key = call.number.filter { it.isDigit() }.takeLast(10)
-                    call.name.isNullOrBlank() && key.isNotEmpty() &&
-                        !savedNumbers.contains(key)
-                }
-
                 addCallHeading(content, "ALL CALLS (${calls.size})")
-                if (calls.isEmpty()) addCallText(content, "Abhi koi call history nahi hai.")
+                if (calls.isEmpty()) {
+                    addCallText(content, "Abhi koi call history nahi hai.")
+                }
                 calls.forEach { addRecentCallRow(content, it, false) }
 
-                addCallHeading(content, "UNKNOWN NUMBERS (${unknown.size})")
-                if (unknown.isEmpty()) addCallText(content, "Unknown numbers nahi mile.")
-                unknown.forEach { addRecentCallRow(content, it, true) }
+                val unknownHeading = TextView(this).apply {
+                    text = "UNKNOWN NUMBERS (checking...)"
+                    textSize = 17f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(green)
+                    setPadding(0, dp(16), 0, dp(8))
+                }
+                content.addView(unknownHeading)
+
+                val checking = TextView(this).apply {
+                    text = "Saved contacts check ho rahe hain..."
+                    textSize = 14f
+                    setTextColor(white)
+                    setPadding(0, dp(8), 0, dp(8))
+                }
+                content.addView(checking)
+
+                Thread {
+                    val savedNumbers = mutableSetOf<String>()
+
+                    try {
+                        val projection = arrayOf(
+                            ContactsContract.CommonDataKinds.Phone.NUMBER
+                        )
+                        contentResolver.query(
+                            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                            projection,
+                            null,
+                            null,
+                            null
+                        )?.use { cursor ->
+                            val index = cursor.getColumnIndexOrThrow(
+                                ContactsContract.CommonDataKinds.Phone.NUMBER
+                            )
+                            while (cursor.moveToNext()) {
+                                val key = (cursor.getString(index) ?: "")
+                                    .filter { it.isDigit() }.takeLast(10)
+                                if (key.isNotEmpty()) savedNumbers.add(key)
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
+
+                    val unknown = calls.filter { call ->
+                        val key = call.number.filter { it.isDigit() }.takeLast(10)
+                        call.name.isNullOrBlank() && key.isNotEmpty() &&
+                            !savedNumbers.contains(key)
+                    }
+
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+
+                        unknownHeading.text = "UNKNOWN NUMBERS (${unknown.size})"
+                        content.removeView(checking)
+
+                        if (unknown.isEmpty()) {
+                            addCallText(content, "Unknown numbers nahi mile.")
+                        } else {
+                            unknown.forEach {
+                                addRecentCallRow(content, it, true)
+                            }
+                        }
+                    }
+                }.start()
             }
         }.start()
     }
