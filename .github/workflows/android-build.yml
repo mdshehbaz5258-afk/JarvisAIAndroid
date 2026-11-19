@@ -17,9 +17,6 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       JARVIS_KEYSTORE_FILE: ${{ github.workspace }}/release-key.jks
-      JARVIS_KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
-      JARVIS_KEY_ALIAS: ${{ secrets.JARVIS_KEY_ALIAS }}
-      JARVIS_KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
 
     steps:
       - name: Checkout project
@@ -52,6 +49,10 @@ jobs:
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build signed Release APK
+        env:
+          JARVIS_KEYSTORE_PASSWORD: ${{ secrets.JARVIS_KEYSTORE_PASSWORD }}
+          JARVIS_KEY_ALIAS: ${{ secrets.JARVIS_KEY_ALIAS }}
+          JARVIS_KEY_PASSWORD: ${{ secrets.JARVIS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon clean assembleRelease
